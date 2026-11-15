@@ -5,12 +5,20 @@ the placeholder @@ (AFL convention). The PoC itself is never exposed to a
 fuzzing strategy; it is only used by the replay harness.
 """
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
 PLACEHOLDER = "@@"
+
+# Messages printed by the crash checks the dataset authors added to some
+# targets (printf + abort at the bug site). A real binary would not contain
+# them, and they reveal the bug, so the LLM side must never see them.
+INSTRUMENTATION = re.compile(r"\[\*\]|\[!\]|(?-i:\bCVE\b)|conditions? for|heap overflow|"
+                             r"overflow detected|out-of-bounds detected|double free|triggering",
+                             re.I)
 
 
 @dataclass

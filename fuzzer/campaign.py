@@ -36,6 +36,10 @@ def main():
     ap.add_argument("--exec-timeout", type=float, default=10)
     ap.add_argument("--feedback", choices=["none", "output", "full"], default="full")
     ap.add_argument("--no-identify", action="store_true", help="skip the identification stage")
+    ap.add_argument("--recon", choices=["none", "summary", "linked"], default="none",
+                    help="Ghidra reconstruction: none, summary in prompts, or summary plus "
+                         "decompiled code linked to each output (needs harness/run_ghidra.sh)")
+    ap.add_argument("--analysis-dir", default="analysis")
     ap.add_argument("--strace", action="store_true", help="add strace syscall summaries (full feedback)")
     ap.add_argument("--ltrace", action="store_true", help="add ltrace library-call summaries (full feedback)")
     ap.add_argument("--no-strip", action="store_true", help="give the LLM side the unstripped binary")
@@ -46,7 +50,8 @@ def main():
 
     target = load_targets(args.targets, args.dataset)[args.target]
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    out = Path(args.out or f"runs/{target.id.replace('#', '_')}/{stamp}-ours-{args.feedback}")
+    out = Path(args.out or f"runs/{target.id.replace('#', '_')}/{stamp}-ours-{args.feedback}"
+               + ("" if args.recon == "none" else f"-recon-{args.recon}"))
     out.mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps(vars(args), indent=1) + "\n")
 
@@ -61,7 +66,8 @@ def main():
         triage = Triage(target, expected, workroot)
         llm = LLM(args.llm_url, args.model, temperature=args.temperature,
                   max_tokens=args.max_tokens, thinking=args.thinking, seed=args.seed)
-        strategy = OursStrategy(identify=not args.no_identify, feedback=args.feedback)
+        strategy = OursStrategy(identify=not args.no_identify, feedback=args.feedback,
+                                recon=args.recon, analysis_dir=args.analysis_dir)
         summary = Campaign(target, strategy, llm, executor, triage, out, workroot,
                            max_llm_calls=args.max_llm_calls, max_minutes=args.max_minutes,
                            stop_on_target=not args.keep_going).run()

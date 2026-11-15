@@ -9,7 +9,8 @@ sees; the *campaign* owns the budget, execution, corpus, crash triage and logs.
 |---|---|
 | `campaign.py` | CLI entry point for one run on one target |
 | `engine.py` | the generate, run, feedback loop; syntax repair; corpus and crash bookkeeping |
-| `ours.py` | Our System: identification, seed generation, behavioral feedback, plateau handling |
+| `ours.py` | Our System: identification, reconstruction, seed generation, behavioral feedback, plateau handling |
+| `reconstruct.py` | Ghidra export (via `ghidra/ExportForLLM.java`), selection of input-processing functions, LLM summary, message-to-code linking |
 | `execute.py` | runs the target and collects exit status, output, instruction count (perf), strace/ltrace summaries; behavior signatures |
 | `genscript.py` | runs LLM-written generator scripts without network and with resource limits |
 | `triage.py` | re-runs crashes on the original debug build under gdb and matches them to `harness/expected_crashes.json` |
@@ -36,7 +37,25 @@ python3 harness/summarize_runs.py 'runs/*/*'
 ```
 
 `LLM_URL` defaults to the endpoint file written by the vLLM serving job.
-Ablation switches: `--feedback none|output|full`, `--no-identify`, `--no-strip`, `--anonymize`.
+Ablation switches: `--feedback none|output|full`, `--recon none|summary|linked`,
+`--no-identify`, `--no-strip`, `--anonymize`.
+
+### Ghidra reconstruction
+
+`--recon` needs a Ghidra export of the target's stripped binary, computed once
+with the separate Ghidra image (`env/ghidra.def`, `env/build_image.sh ghidra`):
+
+```bash
+srun -p mc2 --account=mc2 --qos=default -c 4 --mem=16G -t 02:00:00 \
+    harness/run_ghidra.sh CVE-2017-12067 CVE-2022-44081
+python3 -m fuzzer.reconstruct show --target CVE-2017-12067   # which functions get selected
+```
+
+The export lands in `analysis/<entry>/<binary>/` with the binary's SHA-1, and a
+campaign refuses to use an export made from a different binary. `summary` adds
+an LLM summary of the selected decompiled code to every prompt (2-3 extra LLM
+calls at setup); `linked` also shows, after each round, the decompiled function
+that references the string the target printed.
 
 Each run directory holds `config.json`, `summary.json`, `events.jsonl` (every LLM
 call, execution, crash), `llm/` (full prompts and responses), `scripts/`,
@@ -44,7 +63,6 @@ call, execution, crash), `llm/` (full prompts and responses), `scripts/`,
 
 ## Not implemented yet
 
-- Program reconstruction from decompilation (Ghidra) for Our System
 - LLM + AFL++ (seeding AFL++ through `-F`)
 - WhiteFox strategy (source analysis, target-function feedback)
 - Coverage measurement by replaying corpora on a coverage build

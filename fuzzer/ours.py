@@ -6,24 +6,26 @@ Stages implemented here (minimal version):
      imported functions, filtered strings, --help/-h/--version output) and ask
      the LLM what the program is and what input format it expects.
   2. Seed generation - the LLM writes a generator script for an initial set.
-  3. Feedback loop - each round shows the LLM what its inputs did (outcome,
+  3. Reconstruction (optional) - summarize Ghidra's decompilation of the
+     input-processing functions into a description of the parsed format
+     (fuzzer/reconstruct.py; the Ghidra export is precomputed).
+  4. Feedback loop - each round shows the LLM what its inputs did (outcome,
      first output line, instruction count, optional strace/ltrace summaries,
-     and which inputs produced new behavior) and asks for a new script.
+     and which inputs produced new behavior) and asks for a new script. With
+     recon=linked, it also shows the decompiled function behind each output.
 
-Ablation switches: identify on/off, feedback none/output/full.
-Not implemented yet: decompilation-based program reconstruction (Ghidra).
+Ablation switches: identify on/off, feedback none/output/full,
+recon none/summary/linked.
 """
 import re
 import subprocess
 import tempfile
 from pathlib import Path
 
+from . import reconstruct
 from .execute import first_line, signature
+from .target import INSTRUMENTATION as MARKER
 
-# Strings added by the dataset's crash instrumentation (abort markers). Real
-# binaries would not contain them, and they name the bug, so hide them.
-MARKER = re.compile(r"\[\*\]|\[!\]|CVE|conditions? for|heap overflow|overflow detected|"
-                    r"out-of-bounds detected|double free|triggering", re.I)
 NOISE = re.compile(r"^(GCC:|GLIBC|GLIBCXX|CXXABI|_ITM_|__gmon|_Z|\.)|\.so(\.\d+)*$")
 PLATEAU = 3   # rounds without new behavior before asking for a change of direction
 
@@ -122,10 +124,15 @@ def _human(n):
 class OursStrategy:
     name = "ours"
 
-    def __init__(self, identify=True, feedback="full"):
+    def __init__(self, identify=True, feedback="full", recon="none", analysis_dir="analysis"):
         assert feedback in ("none", "output", "full")
+        assert recon in ("none", "summary", "linked")
         self.identify = identify
         self.feedback = feedback
+        self.recon = recon
+        self.analysis_dir = analysis_dir
+        self.static = None           # reconstruct.Analysis
+        self.reconstruction = None   # LLM summary of the decompiled parsing code
         self.analysis = None
         self.evidence = None
         self.last = None          # (code, error, batch) of the previous round
@@ -136,9 +143,19 @@ class OursStrategy:
         self.c = c
         name = c.binary_path.name
         self.cmd = " ".join([f"./{name}"] + c.target.argv[1:])
-        if not self.identify:
+        if self.identify:
+            self._identify(c, name)
+        else:
             self.analysis = "(no analysis available)"
-            return
+        if self.recon != "none":
+            self.static = reconstruct.load(c.target, self.analysis_dir, c.binary_path)
+            chosen = reconstruct.select(self.static)
+            c.log(event="recon-select", functions=len(chosen),
+                  chars=sum(len(code) for _, code in chosen),
+                  ghidra_seconds=self.static.meta["seconds"])
+            self.reconstruction = reconstruct.summarize(c, self.analysis, chosen)
+
+    def _identify(self, c, name):
         probes = "\n".join(f"$ {cmd}\n{out}\n" for cmd, out in _probe_runs(c.binary_path, name))
         self.evidence = (
             f"`file` output: {_sh(['file', '-b', str(c.binary_path)]).strip()}\n"
@@ -171,6 +188,9 @@ class OursStrategy:
     def messages(self):
         parts = [f"## Program\nInvocation: {self.cmd}  (@@ = path of the generated file)\n"
                  f"Analysis:\n{self.analysis}\n"]
+        if self.reconstruction:
+            parts.append(f"Reconstruction of the input parsing from decompiled code:\n"
+                         f"{self.reconstruction}\n")
         if self.last is None:
             parts.append(
                 "## Task\nWrite a script that produces an initial set of diverse inputs: mostly "
@@ -237,7 +257,10 @@ class OursStrategy:
             tag = "NEW" if b["novel"] else "seen before"
             lines.append(f"- {b['name']} ({b['size']} B): {self._fmt(b)}, {tag}; "
                          f"output: {b['message']!r}")
-        return "\n".join(lines) + "\n"
+        text = "\n".join(lines) + "\n"
+        if self.recon == "linked" and self.static is not None:
+            text += "\n" + reconstruct.linked_code(self.static, batch)
+        return text
 
     def _previous_script(self):
         code = self.last[0] or ""
