@@ -2,151 +2,369 @@
  "CVE-2016-10210": {
   "signal": "SIGSEGV",
   "func": "yy_get_next_buffer",
-  "src": "/home/sheehyun/dev/umd/Research/Symbolic-Execution-Resolution/CVE/yara/build/libyara/re_lexer.c:1573"
+  "src": "/home/sheehyun/dev/umd/Research/Symbolic-Execution-Resolution/CVE/yara/build/libyara/re_lexer.c:1573",
+  "stack": [
+   "fread",
+   "yy_get_next_buffer",
+   "re_yylex",
+   "re_yyparse",
+   "yr_parse_re_string",
+   "yr_re_parse",
+   "yr_parser_reduce_string_declaration",
+   "yara_yyparse",
+   "yr_lex_parse_rules_file",
+   "yr_compiler_add_file",
+   "main"
+  ]
  },
  "CVE-2017-11654": {
   "signal": "SIGABRT",
   "func": "sniff_logins",
-  "src": "SIPdump.c:538"
+  "src": "SIPdump.c:538",
+  "stack": [
+   "sniff_logins",
+   "pcap_loop",
+   "main"
+  ]
  },
  "CVE-2017-12067": {
   "signal": "SIGABRT",
   "func": "interpolate_cubic",
-  "src": "../../src/mkbitmap.c:293"
+  "src": "../../src/mkbitmap.c:293",
+  "stack": [
+   "interpolate_cubic",
+   "process_file",
+   "main"
+  ]
  },
  "CVE-2017-5924": {
   "signal": "SIGABRT",
   "func": "yr_free",
-  "src": "../../libyara/mem.c:156"
+  "src": "../../libyara/mem.c:156",
+  "stack": [
+   "free",
+   "yr_free",
+   "yr_compiler_destroy",
+   "main"
+  ]
  },
  "CVE-2017-7209": {
   "signal": "SIGSEGV",
   "func": "dump_section_as_bytes",
-  "src": "../../binutils/readelf.c:12770"
+  "src": "../../binutils/readelf.c:12770",
+  "stack": [
+   "dump_section_as_bytes",
+   "process_section_contents",
+   "process_object",
+   "process_file",
+   "main"
+  ]
  },
  "CVE-2018-11536": {
   "signal": "SIGABRT",
   "func": "md_split_simple_pairing_mark",
-  "src": "/home/sheehyun/dev/umd/Research/Symbolic-Execution-Resolution/programs/CVE-2018-11536/md4c/md4c/md4c.c:3499"
+  "src": "/home/sheehyun/dev/umd/Research/Symbolic-Execution-Resolution/programs/CVE-2018-11536/md4c/md4c/md4c.c:3499",
+  "stack": [
+   "md_split_simple_pairing_mark",
+   "md_analyze_simple_pairing_mark",
+   "md_analyze_asterisk",
+   "md_analyze_marks",
+   "md_analyze_link_contents",
+   "md_analyze_inlines",
+   "md_process_normal_block_contents",
+   "md_process_leaf_block"
+  ]
  },
  "CVE-2018-18521": {
   "signal": "SIGFPE",
   "func": "arlib_add_symbols",
-  "src": "../../src/arlib.c:258"
+  "src": "../../src/arlib.c:258",
+  "stack": [
+   "arlib_add_symbols",
+   "handle_file",
+   "main"
+  ]
  },
  "CVE-2018-19502": {
   "signal": "SIGABRT",
   "func": "parse",
-  "src": "../../frontend/mp4read.c:767"
+  "src": "../../frontend/mp4read.c:767",
+  "stack": [
+   "parse",
+   "moovin",
+   "mp4read_open",
+   "decodeMP4file"
+  ]
  },
  "CVE-2020-19491": {
   "signal": "SIGSEGV",
-  "func": "??",
-  "src": null
+  "func": "CGIF::AddExtensionBlock",
+  "src": "/tmp/rebuild/sam2p/cgif.c:467",
+  "stack": [
+   "CGIF::AddExtensionBlock",
+   "CGIF::DGifSlurp",
+   "in_gif_reader",
+   "run_sam2p_engine",
+   "main"
+  ]
  },
  "CVE-2020-24240": {
   "signal": "SIGABRT",
   "func": "_obstack_free",
-  "src": "../lib/obstack.c:292"
+  "src": "../lib/obstack.c:292",
+  "stack": [
+   "_obstack_free",
+   "gram_lex",
+   "gram_parse",
+   "reader",
+   "main"
+  ]
  },
  "CVE-2021-28021": {
   "signal": "SIGABRT",
   "func": "stbi__load_gif_main_outofmem",
-  "src": "/home/sheehyun/dev/umd/Research/Symbolic-Execution-Resolution/programs/CVE-2021-28021/stb/stb_image.h:6881"
+  "src": "/home/sheehyun/dev/umd/Research/Symbolic-Execution-Resolution/programs/CVE-2021-28021/stb/stb_image.h:6881",
+  "stack": [
+   "stbi__load_gif_main_outofmem",
+   "stbi__load_gif_main",
+   "stbi_load_gif_from_memory",
+   "main"
+  ]
  },
  "CVE-2021-28275#61418": {
   "signal": "SIGSEGV",
   "func": "ProcessCanonMakerNoteDir",
-  "src": "makernote.c:99"
+  "src": "makernote.c:99",
+  "stack": [
+   "ProcessCanonMakerNoteDir",
+   "ProcessMakerNote",
+   "ProcessExifDir",
+   "process_EXIF",
+   "ReadJpegSections",
+   "ReadJpegFile",
+   "ProcessFile",
+   "main"
+  ]
  },
  "CVE-2021-28275#61761": {
   "signal": "SIGSEGV",
   "func": "Get16u",
-  "src": "exif.c:323"
+  "src": "exif.c:323",
+  "stack": [
+   "Get16u",
+   "PrintFormatNumber",
+   "ProcessCanonMakerNoteDir",
+   "ProcessMakerNote",
+   "ProcessExifDir",
+   "process_EXIF",
+   "ReadJpegSections",
+   "ReadJpegFile",
+   "ProcessFile",
+   "main"
+  ]
  },
  "CVE-2021-46023": {
   "signal": "SIGSEGV",
   "func": "mrb_type",
-  "src": "/home/sheehyun/dev/umd/Research/Symbolic-Execution-Resolution/programs/CVE-2021-46023/mruby-repo/include/mruby/boxing_word.h:228"
+  "src": "/home/sheehyun/dev/umd/Research/Symbolic-Execution-Resolution/programs/CVE-2021-46023/mruby-repo/include/mruby/boxing_word.h:228",
+  "stack": [
+   "mrb_type",
+   "mrb_class",
+   "mrb_vm_exec",
+   "mrb_vm_run",
+   "mrb_top_run",
+   "mrb_load_exec",
+   "mrb_load_detect_file_cxt",
+   "main"
+  ]
  },
  "CVE-2022-2476": {
   "signal": "SIGSEGV",
   "func": "main",
-  "src": "wvunpack.c:834"
+  "src": "wvunpack.c:834",
+  "stack": [
+   "main"
+  ]
  },
  "CVE-2020-35738": {
   "signal": "SIGSEGV",
   "func": "WavpackPackSamples",
-  "src": "pack_utils.c:662"
+  "src": "pack_utils.c:662",
+  "stack": [
+   "WavpackPackSamples",
+   "pack_audio",
+   "pack_file",
+   "main"
+  ]
  },
  "CVE-2022-30975": {
   "signal": "SIGSEGV",
-  "func": "??",
-  "src": null
+  "func": "jsP_dumpsyntax",
+  "src": "/tmp/rebuild/mujs/jsdump.c:685",
+  "stack": [
+   "jsP_dumpsyntax",
+   "js_ppstring",
+   "js_ppfile",
+   "main"
+  ]
  },
  "CVE-2022-44081": {
   "signal": "SIGSEGV",
   "func": "readChunk_tRNS",
-  "src": "lodepng.cpp:4406"
+  "src": "lodepng.cpp:4406",
+  "stack": [
+   "readChunk_tRNS",
+   "lodepng_inspect_chunk",
+   "inspect_chunk_by_name",
+   "Data::loadInspect",
+   "showHeaderInfo",
+   "showInfos",
+   "main"
+  ]
  },
  "CVE-2022-44321": {
   "signal": "SIGABRT",
   "func": "HeapPopStack",
-  "src": "heap.c:90"
+  "src": "heap.c:90",
+  "stack": [
+   "__assert_fail",
+   "HeapPopStack",
+   "ExpressionParse",
+   "ParseStatement",
+   "ParseBlock",
+   "ParseStatementMaybeRun"
+  ]
  },
  "CVE-2025-11081": {
   "signal": "SIGSEGV",
   "func": "dump_dwarf_section",
-  "src": "../../binutils/objdump.c:4501"
+  "src": "../../binutils/objdump.c:4501",
+  "stack": [
+   "dump_dwarf_section",
+   "bfd_map_over_sections",
+   "dump_dwarf",
+   "dump_bfd",
+   "display_object_bfd",
+   "display_any_bfd",
+   "display_file",
+   "main"
+  ]
  },
  "CVE-2025-25947": {
   "signal": "SIGSEGV",
   "func": "AP4_AtomParent::RemoveChild(AP4_Atom*)",
-  "src": null
+  "src": null,
+  "stack": [
+   "AP4_AtomParent::RemoveChild",
+   "main"
+  ]
  },
  "CVE-2025-31163": {
   "signal": "SIGSEGV",
   "func": "put_patternarc",
-  "src": "../../../fig2dev/dev/genpict2e.c:2306"
+  "src": "../../../fig2dev/dev/genpict2e.c:2306",
+  "stack": [
+   "put_patternarc",
+   "genpict2e_arc",
+   "gendev_objects",
+   "main"
+  ]
  },
  "CVE-2025-8846": {
   "signal": "SIGABRT",
   "func": "parse_line",
-  "src": "../asm/parser.c:1298"
+  "src": "../asm/parser.c:1298",
+  "stack": [
+   "parse_line",
+   "assemble_file",
+   "main"
+  ]
  },
  "CVE-2026-3389": {
   "signal": "SIGSEGV",
   "func": "sqstd_rex_newnode",
-  "src": "sqstdrex.cpp:85"
+  "src": "sqstdrex.cpp:85",
+  "stack": [
+   "sqstd_rex_newnode",
+   "sqstd_rex_compile",
+   "_regexp_constructor",
+   "SQVM::CallNative",
+   "SQVM::Execute",
+   "SQVM::Call",
+   "sq_call",
+   "getargs",
+   "main"
+  ]
  },
  "lame": {
   "signal": "SIGABRT",
   "func": "unpack_read_samples",
-  "src": "../../frontend/get_audio.c:1180"
+  "src": "../../frontend/get_audio.c:1180",
+  "stack": [
+   "unpack_read_samples",
+   "read_samples_pcm",
+   "get_audio_common",
+   "get_audio",
+   "lame_encoder_loop",
+   "lame_encoder",
+   "lame_main",
+   "c_main",
+   "main"
+  ]
  },
  "mp4dump": {
   "signal": "SIGABRT",
   "func": "AP4_DataBuffer::SetData",
-  "src": "/home/sheehyun/dev/umd/Research/Symbolic-Execution-Resolution/CVE/test/Bento4/Source/C++/Core/Ap4DataBuffer.cpp:179"
+  "src": "/home/sheehyun/dev/umd/Research/Symbolic-Execution-Resolution/CVE/test/Bento4/Source/C++/Core/Ap4DataBuffer.cpp:179",
+  "stack": [
+   "AP4_DataBuffer::SetData",
+   "AP4_AvccAtom::AP4_AvccAtom",
+   "AP4_AvccAtom::Create",
+   "AP4_AtomFactory::CreateAtomFromStream",
+   "AP4_ContainerAtom::ReadChildren",
+   "AP4_SampleEntry::Read",
+   "AP4_VisualSampleEntry::AP4_VisualSampleEntry",
+   "AP4_AvcSampleEntry::AP4_AvcSampleEntry"
+  ]
  },
  "optipng": {
   "signal": "SIGABRT",
   "func": "LZWGetCode",
-  "src": "gifread.c:374"
+  "src": "gifread.c:374",
+  "stack": [
+   "LZWGetCode",
+   "LZWReadByte",
+   "GIFReadImageData",
+   "GIFReadNextImage",
+   "GIFReadNextBlock",
+   "pngx_read_gif",
+   "pngx_read_image",
+   "opng_read_file",
+   "opng_optimize_impl"
+  ]
  },
  "rtf2html#1": {
   "signal": "SIGSEGV",
   "func": "main",
-  "src": "../rtf2html.cpp:158"
+  "src": "../rtf2html.cpp:158",
+  "stack": [
+   "main"
+  ]
  },
  "rtf2html#2": {
   "signal": "SIGABRT",
   "func": "main",
-  "src": "../rtf2html.cpp:456"
+  "src": "../rtf2html.cpp:456",
+  "stack": [
+   "main"
+  ]
  },
  "rtf2html#3": {
   "signal": "SIGABRT",
   "func": "main",
-  "src": "../rtf2html.cpp:572"
+  "src": "../rtf2html.cpp:572",
+  "stack": [
+   "main"
+  ]
  }
 }

@@ -3,14 +3,16 @@
 #   srun -p mc2 --account=mc2 --qos=default -c 4 --mem=16G -t 02:00:00 \
 #       harness/run_pilot.sh --max-llm-calls 20
 # Override the target list with TARGETS="id1 id2 ...". Extra args go to every campaign.
+# LABEL names the log files, so several pilots can run in one job.
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TARGETS=${TARGETS:-"CVE-2017-12067 CVE-2022-44081 CVE-2021-46023 CVE-2017-11654 CVE-2026-3389"}
+LABEL=${LABEL:-pilot}
 mkdir -p "$ROOT/logs"
 for t in $TARGETS; do
-    "$ROOT/harness/run_campaign.sh" --target "$t" "$@" > "$ROOT/logs/pilot-${t//#/_}.log" 2>&1 &
+    "$ROOT/harness/run_campaign.sh" --target "$t" "$@" > "$ROOT/logs/$LABEL-${t//#/_}.log" 2>&1 &
 done
 wait
 for t in $TARGETS; do
-    echo "=== $t"; tail -n 4 "$ROOT/logs/pilot-${t//#/_}.log"
+    echo "=== $t"; tail -n 4 "$ROOT/logs/$LABEL-${t//#/_}.log"
 done

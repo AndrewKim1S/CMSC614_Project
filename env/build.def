@@ -1,0 +1,25 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+# Toolchain for rebuilding dataset binaries that shipped without symbols
+# (harness/rebuild_debug.sh). gcc-14 matches what the dataset author used
+# (the bison README builds with CC=gcc-14).
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates build-essential gcc-14 g++-14 make perl pkg-config \
+        libreadline-dev file binutils
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export LC_ALL=C.UTF-8
+    export CC=gcc-14 CXX=g++-14
+
+%test
+    gcc-14 --version | head -1
+    g++-14 --version | head -1
+
+%labels
+    Project CMSC614 toolchain for debug rebuilds

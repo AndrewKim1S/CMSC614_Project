@@ -8,6 +8,10 @@ import urllib.error
 import urllib.request
 
 
+class DeadlineReached(Exception):
+    """The run's time budget ran out while waiting for the LLM."""
+
+
 def strip_reasoning(text):
     # With thinking enabled the Qwen chat template opens <think> in the prompt,
     # so the completion contains the reasoning followed by a bare </think>.
@@ -30,7 +34,10 @@ class LLM:
         self.prompt_tokens = 0
         self.completion_tokens = 0
 
-    def chat(self, messages, max_tokens=None):
+    def chat(self, messages, max_tokens=None, deadline=None):
+        """deadline: time.monotonic() value after which waiting is pointless (the
+        run's time budget). Each attempt waits at most until then; past it,
+        DeadlineReached is raised instead of retrying."""
         body = {
             "model": self.model,
             "messages": messages,
@@ -44,11 +51,18 @@ class LLM:
                                      {"Content-Type": "application/json"})
         start = time.monotonic()
         for attempt in range(4):
+            timeout = self.timeout
+            if deadline is not None:
+                timeout = deadline - time.monotonic()
+                if timeout <= 0:
+                    raise DeadlineReached()
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
                     resp = json.load(r)
                 break
             except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+                if deadline is not None and time.monotonic() >= deadline - 1:
+                    raise DeadlineReached() from e
                 if attempt == 3:
                     raise
                 time.sleep(5 * 2 ** attempt)

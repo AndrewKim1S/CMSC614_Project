@@ -5,11 +5,13 @@ the campaign owns the budget, execution, corpus, crash triage and logging.
 """
 import hashlib
 import json
+import re
 import time
 import traceback
 from pathlib import Path
 
 from .execute import first_line
+from .llm import DeadlineReached
 from .genscript import extract_code, run_generator, syntax_error
 
 REPAIR_SYSTEM = ("You fix Python 3 scripts. Reply with the corrected complete script in exactly "
@@ -18,7 +20,7 @@ REPAIR_SYSTEM = ("You fix Python 3 scripts. Reply with the corrected complete sc
 
 class Campaign:
     def __init__(self, target, strategy, llm, executor, triage, out_dir, workroot,
-                 max_llm_calls=30, max_minutes=30, stop_on_target=True, max_triage=50):
+                 max_llm_calls=0, max_minutes=60, stop_on_target=False, max_triage=50):
         self.target = target
         self.strategy = strategy
         self.llm = llm
@@ -41,7 +43,7 @@ class Campaign:
         self.calls_seen = set()  # syscalls / library calls observed so far
         self.target_hit = None
         self.error = None
-        for sub in ("llm", "scripts", "corpus", "crashes"):
+        for sub in ("llm", "scripts", "corpus", "crashes", "inputs"):
             (self.out / sub).mkdir(parents=True, exist_ok=True)
         self.events = open(self.out / "events.jsonl", "w")
 
@@ -55,16 +57,23 @@ class Campaign:
         self.events.flush()
 
     def ask(self, messages, kind, max_tokens=None):
-        text, meta = self.llm.chat(messages, max_tokens=max_tokens)
+        # Wait for the LLM only until the run's time budget ends (a fixed 600 s
+        # timeout plus retries once made a run spend 40 minutes on one reply).
+        text, meta = self.llm.chat(messages, max_tokens=max_tokens,
+                                   deadline=self.start + self.max_seconds)
         n = self.llm.calls
-        (self.out / "llm" / f"{n:03d}_{kind}.txt").write_text(
+        # kind may carry C++ names ("SQLexer::Lex"); Nexus scratch rejects ':' in file names.
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", kind)
+        (self.out / "llm" / f"{n:03d}_{safe}.txt").write_text(
             "\n\n".join(f"===== {m['role'].upper()} =====\n{m['content']}" for m in messages)
             + f"\n\n===== RESPONSE =====\n{text}\n")
         self.log(event="llm", kind=kind, call=n, **meta)
         return text, meta
 
     def budget_left(self):
-        return self.llm.calls < self.max_llm_calls and self.elapsed() < self.max_seconds
+        """Time is the budget; an LLM-call cap applies only if one was given (> 0)."""
+        calls_ok = self.max_llm_calls <= 0 or self.llm.calls < self.max_llm_calls
+        return calls_ok and self.elapsed() < self.max_seconds
 
     # -- main loop -----------------------------------------------------------
     def run(self):
@@ -73,6 +82,8 @@ class Campaign:
             self.strategy.setup(self)
             while self.budget_left() and not (self.stop_on_target and self.target_hit):
                 self.round()
+        except DeadlineReached:          # budget ran out while waiting for a reply: normal end
+            self.log(event="time-up", iteration=self.iteration, waiting_for="llm")
         except Exception:
             self.error = traceback.format_exc()
             self.log(event="error", error=self.error)
@@ -96,7 +107,12 @@ class Campaign:
         code = self.repair(code)
         (self.out / "scripts" / f"round{self.iteration:03d}.py").write_text(code)
         files, err = run_generator(code, self.workroot)
-        batch = [self.execute(name, data) for name, data in files]
+        batch = []
+        for name, data in files:
+            if self.elapsed() >= self.max_seconds:   # time is up: do not overrun the budget
+                self.log(event="time-up", iteration=self.iteration, skipped=len(files) - len(batch))
+                break
+            batch.append(self.execute(name, data))
         self.strategy.observe(code, err, batch)
         self.log(event="round", iteration=self.iteration, files=len(files), error=err,
                  new=sum(b.get("novel", False) for b in batch), behaviors=len(self.behaviors),
@@ -122,17 +138,22 @@ class Campaign:
         if h in self.seen:
             return {"name": name, "size": len(data), "duplicate": True}
         self.seen.add(h)
+        # Every executed input is kept, so coverage can be measured afterwards
+        # the same way for every configuration (harness/measure_coverage.py).
+        (self.out / "inputs" / f"{h[:16]}{self.target.suffix}").write_bytes(data)
         res = self.executor.run(data)
         self.execs += 1
+        # Strategy-specific observations, e.g. WhiteFox's target-function reach.
+        extra = self.strategy.inspect(data, res) if hasattr(self.strategy, "inspect") else {}
 
         calls = set(res.syscalls or ()) | set(res.libcalls or ())
         new_calls = sorted(calls - self.calls_seen) if self.calls_seen else []
         self.calls_seen |= calls
-        sig = self.strategy.signature(res)
+        sig = self.strategy.signature(res, extra)
         novel = sig not in self.behaviors
         item = {"name": name, "size": len(data), "status": res.status,
                 "instructions": res.instructions, "message": first_line(res),
-                "novel": novel, "new_calls": new_calls}
+                "novel": novel, "new_calls": new_calls, **extra}
         if novel:
             fname = f"{h[:12]}{self.target.suffix}"
             (self.out / "corpus" / fname).write_bytes(data)
@@ -177,6 +198,10 @@ class Campaign:
             "crash_sites": sorted(s for s in sites if s),
             "first_crash": self.crashes[0] if self.crashes else None,
             "target_hit": self.target_hit,
+            "target_inputs": sum(1 for c in self.crashes if c["match"]),
+            "budget": {"minutes": self.max_seconds / 60, "llm_calls": self.max_llm_calls or None,
+                       "stop_on_target": self.stop_on_target},
+            "stopped_on_target": bool(self.stop_on_target and self.target_hit),
             "error": self.error,
         }
         (self.out / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")

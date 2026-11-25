@@ -80,12 +80,13 @@ def _read(path):
 
 # -- load / select ------------------------------------------------------------
 class Analysis:
-    def __init__(self, funcs, meta):
+    def __init__(self, funcs, meta, hide=True):
         self.meta = meta
         # Functions containing the dataset's crash instrumentation would show
         # the LLM the exact bug condition; drop them from everything it sees.
+        # (WhiteFox reads upstream source instead, so it keeps them: hide=False.)
         self.hidden = {f["entry"] for f in funcs
-                       if any(INSTRUMENTATION.search(s) for s in f["strings"])}
+                       if hide and any(INSTRUMENTATION.search(s) for s in f["strings"])}
         for f in funcs:
             if f["entry"] in self.hidden:
                 f["code"] = None
@@ -96,14 +97,14 @@ class Analysis:
                 self.by_string.setdefault(s, []).append(f["entry"])
 
 
-def load(target, root, binary_path=None):
+def load(target, root, binary_path=None, hide=True):
     d = analysis_dir(root, target)
     if not (d / "meta.json").exists():
         raise FileNotFoundError(f"no Ghidra analysis in {d}; run harness/run_ghidra.sh {target.id}")
     meta = json.loads((d / "meta.json").read_text())
     if binary_path is not None and meta["sha1"] != sha1_file(binary_path):
         raise RuntimeError(f"{d} was made from a different binary; rerun harness/run_ghidra.sh")
-    return Analysis(_read(d / "functions.jsonl"), meta)
+    return Analysis(_read(d / "functions.jsonl"), meta, hide=hide)
 
 
 CONST_CMP = re.compile(r"(?:==|!=|<=|>=|<|>)\s*(?:0x[0-9a-fA-F]+|\d+|'.')")
@@ -197,7 +198,8 @@ ROLE = ("You are an expert reverse engineer helping with robustness testing (fuz
         "stripped command-line program for a research project.")
 
 
-def summarize(c, identification, chosen, chunk_chars=12000):
+def summarize(c, identification, chosen, chunk_chars=12000, source=False):
+    """source=True: `chosen` holds upstream source instead of decompiled C (L6)."""
     chunks, cur, size = [], [], 0
     for _, code in chosen:
         if cur and size + len(code) > chunk_chars:
@@ -211,23 +213,27 @@ def summarize(c, identification, chosen, chunk_chars=12000):
     for i, chunk in enumerate(chunks, 1):
         if not c.budget_left():
             break
+        what = ("Below is the source code of functions of the program that read or process its "
+                "input file.\n\n" if source else
+                "Below is Ghidra's decompiled C for functions of the binary that read or process "
+                "its input file (names like FUN_00401a20 are addresses; the binary is stripped)."
+                "\n\n")
         prompt = (
-            f"What we already believe about the program:\n{identification}\n\n"
-            "Below is Ghidra's decompiled C for functions of the binary that read or process its "
-            "input file (names like FUN_00401a20 are addresses; the binary is stripped).\n\n"
+            f"What we already believe about the program:\n{identification}\n\n" + what
             + "\n\n".join(chunk) +
             "\n\nFor the functions that matter for input parsing, describe concisely: which input "
             "bytes or fields they read (offsets, sizes, endianness, syntax), the exact checks they "
             "apply (constants, ranges, relations between fields), what happens when a check fails "
             "(error message or return value), and which branches lead to further processing. "
-            "Refer to functions by their FUN_ names. Skip unrelated functions. At most 400 words.")
+            "Refer to functions by their names. Skip unrelated functions. At most 400 words.")
         text, _ = c.ask([{"role": "system", "content": ROLE}, {"role": "user", "content": prompt}],
                         kind=f"recon{i}", max_tokens=2000)
         notes.append(text)
     if len(notes) <= 1 or not c.budget_left():
         return "\n\n".join(notes)
-    prompt = ("Combine these notes, written from different parts of the same binary's decompiled "
-              "code, into one description of the input format as this program parses it: overall "
+    prompt = ("Combine these notes, written from different parts of the same program's "
+              f"{'source' if source else 'decompiled'} code, into one description of the input "
+              "format as this program parses it: overall "
               "structure, per-field constraints with exact values, the order of checks, the "
               "features or branches that lead to deeper processing, and the error message tied to "
               "each failed check. At most 600 words.\n\n"
@@ -257,26 +263,29 @@ def link(a, message, min_chars=8):
     return out
 
 
-def linked_code(a, batch, max_funcs=2, per_func=3000):
-    """Markdown section showing the code behind the most frequent messages."""
+def linked_code(a, batch, max_funcs=2, per_func=3000, code_of=None, name_of=None, label="Decompiled"):
+    """Markdown section showing the code behind the most frequent messages.
+    code_of/name_of swap in another representation (L6: upstream source)."""
+    code_of = code_of or (lambda e: compact(a.funcs[e]["code"]) if a.funcs[e]["code"] else None)
+    name_of = name_of or (lambda e: a.funcs[e]["name"])
     counts = Counter(b["message"] for b in batch if not b.get("duplicate") and b.get("message"))
     parts, shown = [], []
     for msg, _ in counts.most_common():
         for entry, s in link(a, msg):
-            if entry in shown or not a.funcs[entry]["code"]:
+            code = None if entry in shown else code_of(entry)
+            if not code:
                 continue
-            code = compact(a.funcs[entry]["code"])
             if len(code) > per_func:
                 code = code[:per_func] + "\n/* ... truncated ... */"
             parts.append(f"Output {msg!r} matches the string {s!r}, used in "
-                         f"{a.funcs[entry]['name']}:\n```c\n{code}\n```")
+                         f"{name_of(entry)}:\n```c\n{code}\n```")
             shown.append(entry)
             break
         if len(shown) >= max_funcs:
             break
     if not parts:
         return ""
-    return "## Decompiled code behind these outputs\n" + "\n\n".join(parts) + "\n"
+    return f"## {label} code behind these outputs\n" + "\n\n".join(parts) + "\n"
 
 
 # -- CLI ----------------------------------------------------------------------

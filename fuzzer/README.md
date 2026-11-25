@@ -11,6 +11,8 @@ sees; the *campaign* owns the budget, execution, corpus, crash triage and logs.
 | `engine.py` | the generate, run, feedback loop; syntax repair; corpus and crash bookkeeping |
 | `ours.py` | Our System: identification, reconstruction, seed generation, behavioral feedback, plateau handling |
 | `reconstruct.py` | Ghidra export (via `ghidra/ExportForLLM.java`), selection of input-processing functions, LLM summary, message-to-code linking |
+| `whitefox.py` | WhiteFox baseline (white-box + LLM): per-function source analysis, generation with Thompson-sampled examples of scripts that reached the function |
+| `sources.py` | upstream source lookup through the debug build's DWARF info, gdb one-shot breakpoints for function reach |
 | `execute.py` | runs the target and collects exit status, output, instruction count (perf), strace/ltrace summaries; behavior signatures |
 | `genscript.py` | runs LLM-written generator scripts without network and with resource limits |
 | `triage.py` | re-runs crashes on the original debug build under gdb and matches them to `harness/expected_crashes.json` |
@@ -61,8 +63,103 @@ Each run directory holds `config.json`, `summary.json`, `events.jsonl` (every LL
 call, execution, crash), `llm/` (full prompts and responses), `scripts/`,
 `corpus/` (inputs with new behavior) and `crashes/`.
 
+### WhiteFox (white-box + LLM baseline)
+
+```bash
+python3 harness/fetch_sources.py                     # upstream sources from harness/sources.json
+harness/run_campaign.sh --target CVE-2017-12067 --system whitefox --wf-mode parsing
+```
+
+WhiteFox runs the debug build. For each target function it asks the LLM once
+for the input requirements (from the function's and its callers' upstream
+source), then generates inputs for the least-reached target, with up to two
+earlier scripts that reached it as examples (Thompson sampling). gdb one-shot
+breakpoints decide whether an input reached a target.
+
+- `--wf-mode parsing` (default): the top `--wf-targets` input-processing
+  functions from the same static selection Our System uses; needs the Ghidra
+  export. No knowledge of the bug.
+- `--wf-mode vuln`: the function the known PoC crashes in. An upper bound,
+  report separately. Not meaningful when that function is a helper every input
+  reaches (e.g. `mrb_type` for CVE-2021-46023).
+
+Sources come from the README's pinned versions, unmodified, so the dataset's
+crash instrumentation is not visible (`harness/sources.json`; CVE-2022-44321
+has no pinned version, so its source is the default branch).
+`harness/check_whitefox.py` verifies, without LLM calls, that every binary's
+targets are found in the source and that the PoC reaches the vuln-mode target.
+
+Known limits: for yara (CVE-2017-5924), bison, mruby, wvunpack and rtf2html
+every function on the PoC's crash stack also runs on an empty input, so the
+vuln-mode target does not single out the bug; CVE-2025-1377 has no
+reproducible crash, so no target oracle.
+
+### Rebuilt binaries
+
+The dataset's sam2p (CVE-2020-19491) and mujs-pp (CVE-2022-30975) were fully
+stripped. `harness/rebuild_debug.sh` (in `env/build.def`, gcc-14) rebuilds
+them from the README's commit and flags without stripping; `harness/targets.json`
+points both cases at `rebuilt/<entry>/` for every system. Both PoCs still crash
+with SIGSEGV, now at `CGIF::AddExtensionBlock` and `jsP_dumpsyntax` (the
+function named in CVE-2022-30975). Stripped sizes differ from the dataset
+binaries by 0.9% (sam2p) and 5.5% (mujs-pp), so the builds are close to but
+not byte-identical with the originals.
+
+## Information ladder
+
+The main experiment asks whether more information makes the fuzzer better.
+The algorithm (this engine, one LLM) is fixed; only what the LLM sees grows,
+each level including the previous one (`harness/run_experiment.py` configs):
+
+| level | adds | flags |
+|---|---|---|
+| L0 | crashed or not (binary renamed to `target`) | `--no-identify --anonymize --feedback crash` |
+| L1 | program identity: strings, imports, `--help` | `--feedback crash` |
+| L2 | exit status, first output line | `--feedback output` |
+| L3 | syscall / library-call summaries, instruction count | `--feedback full --strace --ltrace` |
+| L4 | decompiled code: reconstruction summary, code behind each message | `--recon linked` |
+| L5 | function coverage of each input (stripped binary, gdb) | `--coverage` |
+| L6 | upstream source instead of decompiled code (same functions as L4) | `--source` |
+
+All LLM calls, including identification and reconstruction, count against the
+same budget. Coverage for comparison across levels (and other tools) is
+measured afterwards by `harness/measure_coverage.py` on the debug build, from
+the `inputs/` every run keeps.
+
+## Threats to validity and fixed mistakes
+
+- Prompt hint (fixed 2026-11-15): the generation rules used the example file
+  name "03_large_width.bmp", which names a format and a field. L0 (no
+  information at all) then wrote BMP files, one with zero width, and hit the
+  mkbitmap bug in one call. Every pilot before the fix (Our System v1-v4,
+  WhiteFox v1-v2) used this text, so their mkbitmap results are biased.
+- Code-block extraction (fixed): Qwen often leaves a code fence open; early
+  pilots counted those replies as syntax errors.
+- Instrumented targets: 10 binaries contain the dataset's `printf` + `abort`
+  checks. Functions containing them are hidden from decompiled code (L4/L5);
+  sources are unmodified upstream code (L6, WhiteFox).
+- L0 still shows the command-line options (e.g. `-zR3`), which can hint at the
+  program.
+- mkbitmap's instrumented condition (zero width or height) is an easy edge case
+  for any LLM; treat it as a sanity target, not evidence.
+- Memorization: the LLM may know these programs and CVEs; report results split
+  by CVE date relative to the model's training data.
+- Rebuilt sam2p and mujs-pp are close to, not identical with, the dataset
+  binaries; picoc's source is unpinned.
+- Function-entry coverage is coarser than AFL's edge coverage.
+
+## Experiments
+
+```bash
+python3 harness/run_experiment.py --name exp1 --configs whitefox-parsing ours-recon \
+    --trials 3 --jobs 6 --max-llm-calls 30 --max-minutes 60
+python3 harness/run_experiment.py --name exp1 --report
+```
+
+One case per binary (28), fixed seeds per trial, finished runs are skipped on
+restart. Results land in `runs/<name>/<target>/<config>/trial<k>/`.
+
 ## Not implemented yet
 
 - LLM + AFL++ (seeding AFL++ through `-F`)
-- WhiteFox strategy (source analysis, target-function feedback)
 - Coverage measurement by replaying corpora on a coverage build
