@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
+# Tested this on my machine where afl-fuzz is not installed just point to binary. 
+# -Q or qemu mode does not really matter because I've just recompiled with afl-clang-fast 
 
 # afl binary path 
 AFL_FUZZ="./AFLplusplus/afl-fuzz"
 
-# target binary path
-TARGET_BINARY="./dataset/CVE-2017-12067/afl/mkbitmap"
+# target binary and arguments. 
+TARGET_BINARY="./dataset/CVE-2021-46023/afl/mruby"
+TARGET_ARGS=(@@)
 
-INPUT_PLACEHOLDER="@@"
 INPUT_DIR="./seeds"
 OUTPUT_DIR="${TARGET_BINARY##*/}_output"
 
@@ -46,7 +48,7 @@ CMD+=(-i "$INPUT_DIR" -o "$OUTPUT_DIR")
 CMD+=(-V "$TIME_LIMIT_SECONDS")
 CMD+=(-m "$MEM_LIMIT")
 CMD+=(-- "$TARGET_BINARY")
-[[ -n "$INPUT_PLACEHOLDER" ]] && CMD+=("$INPUT_PLACEHOLDER")
+CMD+=(-- "$TARGET_BINARY" "${TARGET_ARGS[@]}")
 
 exec "${CMD[@]}"
 
